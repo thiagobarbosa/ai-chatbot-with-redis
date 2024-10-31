@@ -3,7 +3,7 @@ import NextAuth, { Session, User } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 
 import { authConfig } from '@/app/(auth)/auth.config'
-import { getUser } from '@/db/queries'
+import { getUser } from '@/db/users'
 
 interface ExtendedSession extends Session {
   user: User;
