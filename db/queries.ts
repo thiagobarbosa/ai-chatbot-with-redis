@@ -1,36 +1,42 @@
-"server-only";
+'server-only'
 
-import { genSaltSync, hashSync } from "bcrypt-ts";
-import { and, asc, desc, eq, gt } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { genSaltSync, hashSync } from 'bcrypt-ts'
 
-import { user, chat, User, document, Suggestion } from "./schema";
+import { Chat, Document, User } from '@/db/schema'
+import { getRedis } from '@/lib/redis/config'
+import { generateUUID } from '@/lib/utils'
 
-// Optionally, if not using email/pass login, you can
-// use the Drizzle adapter for Auth.js / NextAuth
-// https://authjs.dev/reference/adapter/drizzle
-let client = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
-let db = drizzle(client);
 
-export async function getUser(email: string): Promise<Array<User>> {
+export async function getUser(email: string): Promise<User | null> {
   try {
-    return await db.select().from(user).where(eq(user.email, email));
+    const redis = await getRedis()
+    return await redis.hgetall(`user:${email}`) as User | null
   } catch (error) {
-    console.error("Failed to get user from database");
-    throw error;
+    console.error('Failed to get user from database')
+    throw error
   }
 }
 
 export async function createUser(email: string, password: string) {
-  let salt = genSaltSync(10);
-  let hash = hashSync(password, salt);
+  let salt = genSaltSync(10)
+  let hash = hashSync(password, salt)
 
   try {
-    return await db.insert(user).values({ email, password: hash });
+    const redis = await getRedis()
+    const pipeline = redis.pipeline()
+    const user = {
+      id: generateUUID(),
+      email,
+      password: hash,
+    }
+
+    pipeline.hmset(`user:${email}`, user)
+    pipeline.zadd('users', Date.now(), email)
+
+    return await pipeline.exec()
   } catch (error) {
-    console.error("Failed to create user in database");
-    throw error;
+    console.error('Failed to create user in database')
+    throw error
   }
 }
 
@@ -44,59 +50,98 @@ export async function saveChat({
   userId: string;
 }) {
   try {
-    const selectedChats = await db.select().from(chat).where(eq(chat.id, id));
-
-    if (selectedChats.length > 0) {
-      return await db
-        .update(chat)
-        .set({
-          messages: JSON.stringify(messages),
-        })
-        .where(eq(chat.id, id));
+    const redis = await getRedis()
+    const pipeline = redis.pipeline()
+    const chat = {
+      id,
+      messages,
+      userId,
+      createdAt: new Date(),
     }
 
-    return await db.insert(chat).values({
-      id,
-      createdAt: new Date(),
-      messages: JSON.stringify(messages),
-      userId,
-    });
+    const chatToSave = {
+      ...chat,
+      messages: JSON.stringify(chat.messages)
+    }
+
+    pipeline.hmset(`chat:${chat.id}`, chatToSave)
+    pipeline.zadd(`user:chat:${userId}`, Date.now(), `chat:${chat.id}`)
+
+    return await pipeline.exec()
   } catch (error) {
-    console.error("Failed to save chat in database");
-    throw error;
+    throw error
   }
 }
 
-export async function deleteChatById({ id }: { id: string }) {
+export async function deleteChatById({ id, userId }: { id: string, userId: string }) {
   try {
-    return await db.delete(chat).where(eq(chat.id, id));
+    const redis = await getRedis()
+    await redis.del(`chat:${id}`)
+
+    await redis.zrem(`user:chat:${userId}`, `chat:${id}`)
+
+    return await redis.del(`user:chat:${id}`)
   } catch (error) {
-    console.error("Failed to delete chat by id from database");
-    throw error;
+    console.error('Failed to delete chat by id from database')
+    throw error
   }
 }
 
 export async function getChatsByUserId({ id }: { id: string }) {
   try {
-    return await db
-      .select()
-      .from(chat)
-      .where(eq(chat.userId, id))
-      .orderBy(desc(chat.createdAt));
+    const redis = await getRedis()
+    const chats = await redis.zrange(`user:chat:${id}`, 0, -1, {
+      rev: true
+    })
+
+    if (chats.length === 0) {
+      return []
+    }
+
+    const results = await Promise.all(
+      chats.map(async chatKey => {
+        return await redis.hgetall(chatKey)
+      })
+    )
+
+    return results
+      .filter((result): result is Chat => {
+        return !(result === null || Object.keys(result).length === 0)
+
+      })
+      .map(chat => {
+        const plainChat = { ...chat }
+        if (typeof plainChat.messages === 'string') {
+          try {
+            plainChat.messages = JSON.parse(plainChat.messages)
+          } catch (error) {
+            plainChat.messages = []
+          }
+        }
+        if (plainChat.createdAt && !(plainChat.createdAt instanceof Date)) {
+          plainChat.createdAt = new Date(plainChat.createdAt)
+        }
+        return plainChat as Chat
+      })
   } catch (error) {
-    console.error("Failed to get chats by user from database");
-    throw error;
+    return []
   }
 }
 
 export async function getChatById({ id }: { id: string }) {
-  try {
-    const [selectedChat] = await db.select().from(chat).where(eq(chat.id, id));
-    return selectedChat;
-  } catch (error) {
-    console.error("Failed to get chat by id from database");
-    throw error;
+  const redis = await getRedis()
+  const chat = await redis.hgetall<Chat>(`chat:${id}`)
+
+  if (!chat) {
+    return null
   }
+
+  // Ensure messages is always an array
+  if (!Array.isArray(chat.messages)) {
+    chat.messages = []
+  }
+
+  return chat
 }
 
 export async function saveDocument({
@@ -111,47 +156,52 @@ export async function saveDocument({
   userId: string;
 }) {
   try {
-    return await db.insert(document).values({
+    const redis = await getRedis()
+    const pipeline = redis.pipeline()
+    const document = {
       id,
       title,
       content,
       userId,
       createdAt: new Date(),
-    });
+    }
+
+    pipeline.hmset(`document:${document.id}`, document)
+    pipeline.zadd(`user:document:${userId}`, Date.now(), `document:${document.id}`)
+
+    return await pipeline.exec()
   } catch (error) {
-    console.error("Failed to save document in database");
-    throw error;
+    throw error
   }
 }
 
 export async function getDocumentsById({ id }: { id: string }) {
   try {
-    const documents = await db
-      .select()
-      .from(document)
-      .where(eq(document.id, id))
-      .orderBy(asc(document.createdAt));
+    const redis = await getRedis()
+    const documents = await redis.zrange(`user:document:${id}`, 0, -1)
 
-    return documents;
+    if (documents.length === 0) {
+      return []
+    }
+
+    const results = await Promise.all(
+      documents.map(async document => {
+        return await redis.hgetall(document)
+      })
+    )
+
+    return results
+      .filter((result): result is Record<string, any> => {
+        return !(result === null || Object.keys(result).length === 0)
+      })
   } catch (error) {
-    console.error("Failed to get document by id from database");
-    throw error;
+    return []
   }
 }
 
-export async function getDocumentById({ id }: { id: string }) {
-  try {
-    const [selectedDocument] = await db
-      .select()
-      .from(document)
-      .where(eq(document.id, id))
-      .orderBy(desc(document.createdAt));
-
-    return selectedDocument;
-  } catch (error) {
-    console.error("Failed to get document by id from database");
-    throw error;
-  }
+export async function getDocumentById({ id }: { id: string }): Promise<Document | null> {
+  const redis = await getRedis()
+  return await redis.hgetall(`document:${id}`)
 }
 
 export async function deleteDocumentsByIdAfterTimestamp({
@@ -162,27 +212,49 @@ export async function deleteDocumentsByIdAfterTimestamp({
   timestamp: Date;
 }) {
   try {
-    return await db
-      .delete(document)
-      .where(and(eq(document.id, id), gt(document.createdAt, timestamp)));
+    const redis = await getRedis()
+    const documents = await redis.zrange(`user:document:${id}`, 0, -1)
+
+    if (documents.length === 0) {
+      return
+    }
+
+    const pipeline = redis.pipeline()
+
+    for (const document of documents) {
+      const doc = await redis.hgetall(document) as Document
+      if (!doc) {
+        continue
+      }
+      if (doc.createdAt && new Date(doc.createdAt) > timestamp) {
+        pipeline.del(document)
+        pipeline.zrem(`user:document:${id}`, document)
+      }
+    }
+
+    return await pipeline.exec()
   } catch (error) {
-    console.error(
-      "Failed to delete documents by id after timestamp from database",
-    );
-    throw error;
+    throw error
   }
 }
 
 export async function saveSuggestions({
   suggestions,
 }: {
-  suggestions: Array<Suggestion>;
+  suggestions: any[];
 }) {
   try {
-    return await db.insert(Suggestion).values(suggestions);
+    const redis = await getRedis()
+    const pipeline = redis.pipeline()
+
+    for (const suggestion of suggestions) {
+      pipeline.hmset(`suggestion:${suggestion.id}`, suggestion)
+      pipeline.zadd(`user:suggestion:${suggestion.userId}`, Date.now(), `suggestion:${suggestion.id}`)
+    }
+
+    return await pipeline.exec()
   } catch (error) {
-    console.error("Failed to save suggestions in database");
-    throw error;
+    throw error
   }
 }
 
@@ -192,14 +264,28 @@ export async function getSuggestionsByDocumentId({
   documentId: string;
 }) {
   try {
-    return await db
-      .select()
-      .from(Suggestion)
-      .where(and(eq(Suggestion.documentId, documentId)));
+    const redis = await getRedis()
+    const suggestions = await redis.zrange(`document:suggestions:${documentId}`, 0, -1, {
+      rev: true
+    })
+
+    if (suggestions.length === 0) {
+      return []
+    }
+
+    const results = await Promise.all(
+      suggestions.map(async suggestionKey => {
+        return await redis.hgetall(suggestionKey)
+      })
+    )
+
+    return results
+      .filter((result): result is Record<string, any> => {
+        return !(result === null || Object.keys(result).length === 0)
+
+      })
   } catch (error) {
-    console.error(
-      "Failed to get suggestions by document version from database",
-    );
-    throw error;
+    return []
   }
 }
+

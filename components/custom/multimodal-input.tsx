@@ -1,39 +1,31 @@
-'use client';
+'use client'
 
-import { Attachment, ChatRequestOptions, CreateMessage, Message } from 'ai';
-import cx from 'classnames';
-import { motion } from 'framer-motion';
-import React, {
-  useRef,
-  useEffect,
-  useState,
-  useCallback,
-  Dispatch,
-  SetStateAction,
-  ChangeEvent,
-} from 'react';
-import { toast } from 'sonner';
+import { Attachment, ChatRequestOptions, CreateMessage, Message } from 'ai'
+import cx from 'classnames'
+import { motion } from 'framer-motion'
+import React, { ChangeEvent, Dispatch, SetStateAction, useCallback, useEffect, useRef, useState, } from 'react'
+import { toast } from 'sonner'
 
-import { sanitizeUIMessages } from '@/lib/utils';
+import { sanitizeUIMessages } from '@/lib/utils'
 
-import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
-import { PreviewAttachment } from './preview-attachment';
-import useWindowSize from './use-window-size';
-import { Button } from '../ui/button';
-import { Textarea } from '../ui/textarea';
+import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons'
+import { PreviewAttachment } from './preview-attachment'
+import useWindowSize from './use-window-size'
+import { Button } from '../ui/button'
+import { Textarea } from '../ui/textarea'
 
 const suggestedActions = [
   {
     title: 'What is the weather',
-    label: 'in San Francisco?',
-    action: 'What is the weather in San Francisco?',
+    label: 'in Stockholm?',
+    action: 'What is the weather in Stockholm?',
   },
   {
     title: 'Help me draft an essay',
     label: 'about Silicon Valley',
     action: 'Help me draft an essay about Silicon Valley',
   },
-];
+]
 
 export function MultimodalInput({
   input,
@@ -68,95 +60,95 @@ export function MultimodalInput({
   ) => void;
   className?: string;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { width } = useWindowSize();
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { width } = useWindowSize()
 
   useEffect(() => {
     if (textareaRef.current) {
-      adjustHeight();
+      adjustHeight()
     }
-  }, []);
+  }, [])
 
   const adjustHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`;
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`
     }
-  };
+  }
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(event.target.value);
-    adjustHeight();
-  };
+    setInput(event.target.value)
+    adjustHeight()
+  }
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadQueue, setUploadQueue] = useState<Array<string>>([])
 
   const submitForm = useCallback(() => {
     handleSubmit(undefined, {
       experimental_attachments: attachments,
-    });
+    })
 
-    setAttachments([]);
+    setAttachments([])
 
     if (width && width > 768) {
-      textareaRef.current?.focus();
+      textareaRef.current?.focus()
     }
-  }, [attachments, handleSubmit, setAttachments, width]);
+  }, [attachments, handleSubmit, setAttachments, width])
 
   const uploadFile = async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
+    const formData = new FormData()
+    formData.append('file', file)
 
     try {
       const response = await fetch(`/api/files/upload`, {
         method: 'POST',
         body: formData,
-      });
+      })
 
       if (response.ok) {
-        const data = await response.json();
-        const { url, pathname, contentType } = data;
+        const data = await response.json()
+        const { url, pathname, contentType } = data
 
         return {
           url,
           name: pathname,
           contentType: contentType,
-        };
+        }
       } else {
-        const { error } = await response.json();
-        toast.error(error);
+        const { error } = await response.json()
+        toast.error(error)
       }
     } catch (error) {
-      toast.error('Failed to upload file, please try again!');
+      toast.error('Failed to upload file, please try again!')
     }
-  };
+  }
 
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files || []);
+      const files = Array.from(event.target.files || [])
 
-      setUploadQueue(files.map((file) => file.name));
+      setUploadQueue(files.map((file) => file.name))
 
       try {
-        const uploadPromises = files.map((file) => uploadFile(file));
-        const uploadedAttachments = await Promise.all(uploadPromises);
+        const uploadPromises = files.map((file) => uploadFile(file))
+        const uploadedAttachments = await Promise.all(uploadPromises)
         const successfullyUploadedAttachments = uploadedAttachments.filter(
           (attachment) => attachment !== undefined
-        );
+        )
 
         setAttachments((currentAttachments) => [
           ...currentAttachments,
           ...successfullyUploadedAttachments,
-        ]);
+        ])
       } catch (error) {
-        console.error('Error uploading files!', error);
+        console.error('Error uploading files!', error)
       } finally {
-        setUploadQueue([]);
+        setUploadQueue([])
       }
     },
     [setAttachments]
-  );
+  )
 
   return (
     <div className="relative w-full flex flex-col gap-4">
@@ -179,7 +171,7 @@ export function MultimodalInput({
                     append({
                       role: 'user',
                       content: suggestedAction.action,
-                    });
+                    })
                   }}
                   className="text-left border rounded-xl px-4 py-3.5 text-sm flex-1 gap-1 sm:flex-col w-full h-auto justify-start items-start"
                 >
@@ -205,7 +197,7 @@ export function MultimodalInput({
       {(attachments.length > 0 || uploadQueue.length > 0) && (
         <div className="flex flex-row gap-2 overflow-x-scroll">
           {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
+            <PreviewAttachment key={attachment.url} attachment={attachment}/>
           ))}
 
           {uploadQueue.map((filename) => (
@@ -234,12 +226,12 @@ export function MultimodalInput({
         rows={3}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
+            event.preventDefault()
 
             if (isLoading) {
-              toast.error('Please wait for the model to finish its response!');
+              toast.error('Please wait for the model to finish its response!')
             } else {
-              submitForm();
+              submitForm()
             }
           }
         }}
@@ -249,37 +241,37 @@ export function MultimodalInput({
         <Button
           className="rounded-full p-1.5 h-fit absolute bottom-2 right-2 m-0.5"
           onClick={(event) => {
-            event.preventDefault();
-            stop();
-            setMessages((messages) => sanitizeUIMessages(messages));
+            event.preventDefault()
+            stop()
+            setMessages((messages) => sanitizeUIMessages(messages))
           }}
         >
-          <StopIcon size={14} />
+          <StopIcon size={14}/>
         </Button>
       ) : (
         <Button
           className="rounded-full p-1.5 h-fit absolute bottom-2 right-2 m-0.5"
           onClick={(event) => {
-            event.preventDefault();
-            submitForm();
+            event.preventDefault()
+            submitForm()
           }}
           disabled={input.length === 0 || uploadQueue.length > 0}
         >
-          <ArrowUpIcon size={14} />
+          <ArrowUpIcon size={14}/>
         </Button>
       )}
 
       <Button
         className="rounded-full p-1.5 h-fit absolute bottom-2 right-10 m-0.5 dark:border-zinc-700"
         onClick={(event) => {
-          event.preventDefault();
-          fileInputRef.current?.click();
+          event.preventDefault()
+          fileInputRef.current?.click()
         }}
         variant="outline"
         disabled={isLoading}
       >
-        <PaperclipIcon size={14} />
+        <PaperclipIcon size={14}/>
       </Button>
     </div>
-  );
+  )
 }
