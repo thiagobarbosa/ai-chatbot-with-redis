@@ -1,4 +1,5 @@
 import {
+  Attachment,
   CoreAssistantMessage,
   CoreMessage,
   CoreToolMessage,
@@ -97,29 +98,45 @@ export function convertToUIMessages(
     }
 
     let textContent = '';
+    let attachments: Array<Attachment> = [];
     let toolInvocations: Array<ToolInvocation> = [];
 
     if (typeof message.content === 'string') {
       textContent = message.content;
-    } else if (Array.isArray(message.content)) {
-      for (const content of message.content) {
-        if (content.type === 'text') {
+    }
+
+    Array.isArray(message.content) && message.content.forEach((content) => {
+      switch (content.type) {
+        case 'text':
           textContent += content.text;
-        } else if (content.type === 'tool-call') {
+          break;
+
+        case 'image':
+          attachments.push({
+            contentType: 'image',
+            url: content.image.toString()
+          });
+          break;
+
+        case 'tool-call':
           toolInvocations.push({
             state: 'call',
             toolCallId: content.toolCallId,
             toolName: content.toolName,
             args: content.args,
           });
-        }
+          break;
+
+        default:
+          break;
       }
-    }
+    });
 
     chatMessages.push({
       id: generateId(),
       role: message.role,
       content: textContent,
+      experimental_attachments: attachments,
       toolInvocations,
     });
 
