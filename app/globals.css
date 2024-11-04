@@ -145,3 +145,7 @@ img[alt=md-image] {
 .ProseMirror {
   outline: none;
 }
+
+.suggestion-highlight {
+  @apply bg-yellow-100 hover:bg-yellow-200 dark:hover:bg-yellow-400/50 dark:text-yellow-50 dark:bg-yellow-400/40;
+}
