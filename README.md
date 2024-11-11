@@ -1,10 +1,9 @@
 <a href="https://chat.vercel.ai/">
-  <img alt="Next.js 14 and App Router-ready AI chatbot." src="app/(chat)/opengraph-image.png">
-  <h1 align="center">Next.js AI Chatbot</h1>
+  <h1 align="center">Next.js AI Chatbot With Redis</h1>
 </a>
 
 <p align="center">
-  An Open-Source AI Chatbot Template Built With Next.js and the AI SDK by Vercel.
+  This is a fork of the <a href="https://github.com/vercel/ai-chatbot">Next.js AI Chatbot</a> template but with Redis as the data store instead of Postgres.
 </p>
 
 <p align="center">
@@ -13,7 +12,15 @@
   <a href="#deploy-your-own"><strong>Deploy Your Own</strong></a> ·
   <a href="#running-locally"><strong>Running locally</strong></a>
 </p>
-<br/>
+
+## About Redis
+The Redis support is provided by the [Upstash](https://upstash.com/) service. You will need to create an account and add the following environment variables to your `.env` files:
+
+- `UPSTASH_REDIS_REST_URL`: The REST URL for your Upstash Redis instance.
+- `UPSTASH_REDIS_REST_TOKEN`: The REST token for your Upstash Redis instance.
+
+Both those values can be found in the [Upstash console](https://console.upstash.com/redis).\
+Upstash have a free tier that allows **10,000** commands per day, which should be more than enough for small projects - even on production environments.
 
 ## Features
 
@@ -28,7 +35,7 @@
   - Styling with [Tailwind CSS](https://tailwindcss.com)
   - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
 - Data Persistence
-  - [Vercel Postgres powered by Neon](https://vercel.com/storage/postgres) for saving chat history and user data
+ - [Upstash Redis](https://upstash.com) for saving chat history and user data
   - [Vercel Blob](https://vercel.com/storage/blob) for efficient file storage
 - [NextAuth.js](https://github.com/nextauthjs/next-auth)
   - Simple and secure authentication
